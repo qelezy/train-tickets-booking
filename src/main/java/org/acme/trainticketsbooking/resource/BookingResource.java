@@ -5,6 +5,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -15,6 +16,7 @@ import org.acme.trainticketsbooking.service.BookingService;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 @Path("/api/v1/bookings")
 @ApplicationScoped
@@ -34,6 +36,24 @@ public class BookingResource {
         return Response.status(Response.Status.CREATED)
             .entity(bookingService.createBooking(request))
             .build();
+    }
+
+    @POST
+    @Path("{bookingId}/cancel")
+    public Response cancelBooking(@PathParam("bookingId") String bookingId) {
+        UUID id = parseBookingId(bookingId);
+        return Response.ok(bookingService.cancelBooking(id)).build();
+    }
+
+    private UUID parseBookingId(String bookingId) {
+        if (bookingId == null || bookingId.isBlank()) {
+            throw new BadRequestException("Идентификатор бронирования обязателен");
+        }
+        try {
+            return UUID.fromString(bookingId.trim());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Некорректный идентификатор бронирования");
+        }
     }
 
     private void validate(BookingCreateRequest request) {

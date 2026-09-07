@@ -1,27 +1,38 @@
 package org.acme.trainticketsbooking.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import org.acme.trainticketsbooking.domain.BookingForCancellation;
+import org.acme.trainticketsbooking.domain.BookingStatus;
+import org.acme.trainticketsbooking.domain.CancelledBooking;
 import org.acme.trainticketsbooking.domain.CreatedBooking;
 import org.acme.trainticketsbooking.domain.SeatSelection;
 import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
 import org.acme.trainticketsbooking.dto.request.BookingCreateRequest;
 import org.acme.trainticketsbooking.dto.request.SeatRequest;
+import org.acme.trainticketsbooking.dto.response.BookingCancelResponse;
 import org.acme.trainticketsbooking.dto.response.BookingCreateResponse;
+import org.acme.trainticketsbooking.exception.BookingAlreadyCancelledException;
+import org.acme.trainticketsbooking.exception.BookingNotFoundException;
+import org.acme.trainticketsbooking.exception.CancellationTooLateException;
 import org.acme.trainticketsbooking.exception.InvalidBookingException;
 import org.acme.trainticketsbooking.exception.SeatAlreadyTakenException;
 import org.acme.trainticketsbooking.exception.TripNotFoundException;
 import org.acme.trainticketsbooking.mapper.BookingMapper;
 import org.acme.trainticketsbooking.repository.BookingRepository;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @ApplicationScoped
 public class BookingService {
+
+    private static final int CANCEL_DEADLINE_HOURS = 2;
 
     private final BookingRepository bookingRepository;
     private final BookingMapper bookingMapper;
@@ -46,6 +57,24 @@ public class BookingService {
 
         CreatedBooking created = bookingRepository.createBooking(selections);
         return bookingMapper.toCreateResponse(created);
+    }
+
+    public BookingCancelResponse cancelBooking(UUID bookingId) {
+        BookingForCancellation booking = bookingRepository.findBookingForCancellation(bookingId)
+            .orElseThrow(() -> new BookingNotFoundException(bookingId));
+
+        if (booking.status() == BookingStatus.CANCELLED) {
+            throw new BookingAlreadyCancelledException(bookingId);
+        }
+        if (booking.departureTime() == null) {
+            throw new InvalidBookingException("У бронирования отсутствует связанный рейс");
+        }
+        if (!OffsetDateTime.now().isBefore(booking.departureTime().minusHours(CANCEL_DEADLINE_HOURS))) {
+            throw new CancellationTooLateException();
+        }
+
+        CancelledBooking cancelled = bookingRepository.cancelBooking(bookingId);
+        return bookingMapper.toCancelResponse(cancelled);
     }
 
     private List<SeatSelection> resolveSeats(

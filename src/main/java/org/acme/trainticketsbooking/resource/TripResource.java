@@ -26,6 +26,11 @@ public class TripResource {
 
     @GET
     public Response getAvailableTrips(@BeanParam TripSearchRequest request) {
+        validate(request);
+        return Response.ok(tripService.findAvailableTrips(request)).build();
+    }
+
+    private void validate(TripSearchRequest request) {
         if (request.departureCity() == null || request.departureCity().isBlank()) {
             throw new BadRequestException("Город отправления обязателен");
         }
@@ -35,7 +40,5 @@ public class TripResource {
         if (request.departureCity().equalsIgnoreCase(request.arrivalCity())) {
             throw new BadRequestException("Город отправления и город прибытия не могут совпадать");
         }
-
-        return Response.ok(tripService.findAvailableTrips(request)).build();
     }
 }

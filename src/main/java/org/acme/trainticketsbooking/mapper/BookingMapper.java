@@ -1,0 +1,33 @@
+package org.acme.trainticketsbooking.mapper;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import org.acme.trainticketsbooking.domain.CreatedBooking;
+import org.acme.trainticketsbooking.domain.CreatedTicket;
+import org.acme.trainticketsbooking.dto.response.BookingCreateResponse;
+import org.acme.trainticketsbooking.dto.response.TicketResponse;
+
+import java.util.List;
+
+@ApplicationScoped
+public class BookingMapper {
+
+    public BookingCreateResponse toCreateResponse(CreatedBooking booking) {
+        return new BookingCreateResponse(
+            booking.bookingId(),
+            toTicketResponseList(booking.tickets())
+        );
+    }
+
+    private List<TicketResponse> toTicketResponseList(List<CreatedTicket> tickets) {
+        return tickets.stream().map(this::toTicketResponse).toList();
+    }
+
+    private TicketResponse toTicketResponse(CreatedTicket ticket) {
+        return new TicketResponse(
+            ticket.ticketId(),
+            ticket.carriageNumber(),
+            ticket.seatNumber(),
+            ticket.status()
+        );
+    }
+}

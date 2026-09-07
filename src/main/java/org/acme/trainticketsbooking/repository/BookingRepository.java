@@ -2,11 +2,15 @@ package org.acme.trainticketsbooking.repository;
 
 import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.acme.trainticketsbooking.domain.BookingForCancellation;
+import org.acme.trainticketsbooking.domain.BookingStatus;
+import org.acme.trainticketsbooking.domain.CancelledBooking;
 import org.acme.trainticketsbooking.domain.CreatedBooking;
 import org.acme.trainticketsbooking.domain.CreatedTicket;
 import org.acme.trainticketsbooking.domain.SeatSelection;
 import org.acme.trainticketsbooking.domain.TicketStatus;
 import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
+import org.acme.trainticketsbooking.exception.BookingAlreadyCancelledException;
 import org.acme.trainticketsbooking.exception.DataAccessException;
 import org.acme.trainticketsbooking.exception.SeatAlreadyTakenException;
 import org.postgresql.util.PSQLException;
@@ -16,6 +20,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -57,6 +62,34 @@ public class BookingRepository {
         INSERT INTO ticket (booking_id, trip_carriage_id, seat_number, status)
         VALUES (?, ?, ?, 'ACTIVE')
         RETURNING id
+        """;
+
+    private static final String FIND_BOOKING_FOR_CANCELLATION_SQL = """
+        SELECT b.id,
+               b.status,
+               MIN(tr.departure_time) AS departure_time
+        FROM booking b
+        LEFT JOIN ticket t ON t.booking_id = b.id
+        LEFT JOIN trip_carriage tc ON tc.id = t.trip_carriage_id
+        LEFT JOIN trip tr ON tr.id = tc.trip_id
+        WHERE b.id = ?
+        GROUP BY b.id, b.status
+        """;
+
+    private static final String CANCEL_BOOKING_SQL = """
+        UPDATE booking
+        SET status = 'CANCELLED',
+            cancelled_at = NOW()
+        WHERE id = ?
+          AND status = 'CONFIRMED'
+        """;
+
+    private static final String CANCEL_TICKETS_SQL = """
+        UPDATE ticket
+        SET status = 'CANCELLED',
+            cancelled_at = NOW()
+        WHERE booking_id = ?
+          AND status = 'ACTIVE'
         """;
 
     private final AgroalDataSource dataSource;
@@ -151,6 +184,59 @@ public class BookingRepository {
                 throw new SeatAlreadyTakenException();
             }
             throw new DataAccessException("Ошибка при оформлении бронирования", e);
+        }
+    }
+
+    public Optional<BookingForCancellation> findBookingForCancellation(UUID bookingId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(FIND_BOOKING_FOR_CANCELLATION_SQL)) {
+
+            statement.setObject(1, bookingId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new BookingForCancellation(
+                    resultSet.getObject("id", UUID.class),
+                    BookingStatus.valueOf(resultSet.getString("status")),
+                    resultSet.getObject("departure_time", OffsetDateTime.class)
+                ));
+            }
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка при получении бронирования для отмены", e);
+        }
+    }
+
+    public CancelledBooking cancelBooking(UUID bookingId) {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement cancelBooking = connection.prepareStatement(CANCEL_BOOKING_SQL)) {
+                    cancelBooking.setObject(1, bookingId);
+                    int updatedBookings = cancelBooking.executeUpdate();
+                    if (updatedBookings == 0) {
+                        connection.rollback();
+                        throw new BookingAlreadyCancelledException(bookingId);
+                    }
+                }
+                try (PreparedStatement cancelTickets = connection.prepareStatement(CANCEL_TICKETS_SQL)) {
+                    cancelTickets.setObject(1, bookingId);
+                    cancelTickets.executeUpdate();
+                }
+                connection.commit();
+                return new CancelledBooking(bookingId, BookingStatus.CANCELLED);
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (BookingAlreadyCancelledException e) {
+            throw e;
+        } catch (DataAccessException e) {
+            throw e;
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка при отмене бронирования", e);
         }
     }
 

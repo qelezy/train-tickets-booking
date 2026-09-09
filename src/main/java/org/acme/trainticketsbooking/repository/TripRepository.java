@@ -41,6 +41,7 @@ public class TripRepository {
         WHERE LOWER(ds.city) = LOWER(?)
           AND LOWER(arrs.city) = LOWER(?)
           AND (? IS NULL OR LOWER(t.name) = LOWER(?))
+          AND tr.departure_time > NOW()
         ORDER BY tr.departure_time ASC
         """;
 
@@ -51,10 +52,12 @@ public class TripRepository {
         FROM trip_carriage tc
         JOIN carriage_template ct ON ct.id = tc.carriage_template_id
         LEFT JOIN (
-            SELECT trip_carriage_id, COUNT(*)::int AS cnt
-            FROM ticket
-            WHERE status = 'ACTIVE'
-            GROUP BY trip_carriage_id
+            SELECT t.trip_carriage_id, COUNT(*) AS cnt
+            FROM ticket t
+            JOIN trip_carriage tc2 ON tc2.id = t.trip_carriage_id
+            WHERE t.status = 'ACTIVE'
+              AND tc2.trip_id = ANY(?)
+            GROUP BY t.trip_carriage_id
         ) occ ON occ.trip_carriage_id = tc.id
         WHERE tc.trip_id = ANY(?)
         GROUP BY tc.trip_id, ct.type
@@ -96,6 +99,7 @@ public class TripRepository {
 
             Array tripIdArray = connection.createArrayOf("bigint", tripIds.toArray(Long[]::new));
             statement.setArray(1, tripIdArray);
+            statement.setArray(2, tripIdArray);
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 Map<Long, List<SeatAvailability>> availabilityByTripId = new LinkedHashMap<>();

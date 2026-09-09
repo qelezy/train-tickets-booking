@@ -1,6 +1,7 @@
 package org.acme.trainticketsbooking.exception;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.quarkus.logging.Log;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -11,6 +12,8 @@ public class JsonProcessingExceptionMapper implements ExceptionMapper<JsonProces
 
     @Override
     public Response toResponse(JsonProcessingException exception) {
+        Log.warn("Некорректный JSON в теле запроса", exception);
+
         int statusCode = Response.Status.BAD_REQUEST.getStatusCode();
         ErrorResponse errorBody = new ErrorResponse(
             statusCode,

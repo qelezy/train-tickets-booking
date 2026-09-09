@@ -41,8 +41,7 @@ public class BookingResource {
     @POST
     @Path("{bookingId}/cancel")
     public Response cancelBooking(@PathParam("bookingId") String bookingId) {
-        UUID id = parseBookingId(bookingId);
-        return Response.ok(bookingService.cancelBooking(id)).build();
+        return Response.ok(bookingService.cancelBooking(parseBookingId(bookingId))).build();
     }
 
     private UUID parseBookingId(String bookingId) {

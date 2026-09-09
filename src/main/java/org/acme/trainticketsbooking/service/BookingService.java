@@ -1,10 +1,13 @@
 package org.acme.trainticketsbooking.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.transaction.Transactional;
 import org.acme.trainticketsbooking.domain.BookingForCancellation;
 import org.acme.trainticketsbooking.domain.BookingStatus;
 import org.acme.trainticketsbooking.domain.CancelledBooking;
 import org.acme.trainticketsbooking.domain.CreatedBooking;
+import org.acme.trainticketsbooking.domain.CreatedTicket;
+import org.acme.trainticketsbooking.domain.OccupiedSeat;
 import org.acme.trainticketsbooking.domain.SeatSelection;
 import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
 import org.acme.trainticketsbooking.dto.request.BookingCreateRequest;
@@ -32,8 +35,6 @@ import java.util.UUID;
 @ApplicationScoped
 public class BookingService {
 
-    private static final int CANCEL_DEADLINE_HOURS = 2;
-
     private final BookingRepository bookingRepository;
     private final BookingMapper bookingMapper;
 
@@ -42,25 +43,27 @@ public class BookingService {
         this.bookingMapper = bookingMapper;
     }
 
+    @Transactional
     public BookingCreateResponse createBooking(BookingCreateRequest request) {
         long tripId = request.tripId();
-        List<TripCarriageSeatInfo> carriages = bookingRepository.findTripCarriages(tripId)
+        List<TripCarriageSeatInfo> carriages = bookingRepository.lockTripWithCarriages(tripId)
             .orElseThrow(() -> new TripNotFoundException(tripId));
 
-        Map<Short, TripCarriageSeatInfo> carriageByNumber = new HashMap<>();
-        for (TripCarriageSeatInfo carriage : carriages) {
-            carriageByNumber.put(carriage.carriageNumber(), carriage);
+        List<SeatSelection> seats = resolveSeats(request.seats(), carriages);
+        ensureSeatsAvailable(seats);
+
+        UUID bookingId = bookingRepository.insertBooking();
+        List<CreatedTicket> tickets = new ArrayList<>(seats.size());
+        for (SeatSelection seat : seats) {
+            tickets.add(bookingRepository.insertTicket(bookingId, seat));
         }
 
-        List<SeatSelection> selections = resolveSeats(request.seats(), carriageByNumber);
-        ensureSeatsAvailable(selections);
-
-        CreatedBooking created = bookingRepository.createBooking(selections);
-        return bookingMapper.toCreateResponse(created);
+        return bookingMapper.toCreateResponse(new CreatedBooking(bookingId, tickets));
     }
 
+    @Transactional
     public BookingCancelResponse cancelBooking(UUID bookingId) {
-        BookingForCancellation booking = bookingRepository.findBookingForCancellation(bookingId)
+        BookingForCancellation booking = bookingRepository.lockBookingForCancellation(bookingId)
             .orElseThrow(() -> new BookingNotFoundException(bookingId));
 
         if (booking.status() == BookingStatus.CANCELLED) {
@@ -69,20 +72,32 @@ public class BookingService {
         if (booking.departureTime() == null) {
             throw new InvalidBookingException("У бронирования отсутствует связанный рейс");
         }
-        if (!OffsetDateTime.now().isBefore(booking.departureTime().minusHours(CANCEL_DEADLINE_HOURS))) {
+
+        OffsetDateTime cancelDeadline = booking.departureTime().minusHours(2);
+        if (booking.checkedAt().isAfter(cancelDeadline)) {
             throw new CancellationTooLateException();
         }
 
-        CancelledBooking cancelled = bookingRepository.cancelBooking(bookingId);
-        return bookingMapper.toCancelResponse(cancelled);
+        int updated = bookingRepository.cancelConfirmedBooking(bookingId);
+        if (updated == 0) {
+            throw new BookingAlreadyCancelledException(bookingId);
+        }
+        bookingRepository.cancelActiveTickets(bookingId);
+
+        return bookingMapper.toCancelResponse(new CancelledBooking(bookingId, BookingStatus.CANCELLED));
     }
 
     private List<SeatSelection> resolveSeats(
-            List<SeatRequest> seats,
-            Map<Short, TripCarriageSeatInfo> carriageByNumber
+            List<SeatRequest> seatRequests,
+            List<TripCarriageSeatInfo> carriages
     ) {
-        List<SeatSelection> selections = new ArrayList<>(seats.size());
-        for (SeatRequest seat : seats) {
+        Map<Short, TripCarriageSeatInfo> carriageByNumber = new HashMap<>();
+        for (TripCarriageSeatInfo carriage : carriages) {
+            carriageByNumber.put(carriage.carriageNumber(), carriage);
+        }
+
+        List<SeatSelection> selections = new ArrayList<>(seatRequests.size());
+        for (SeatRequest seat : seatRequests) {
             short carriageNumber = seat.carriageNumber();
             short seatNumber = seat.seatNumber();
 
@@ -105,20 +120,17 @@ public class BookingService {
         return selections;
     }
 
-    private void ensureSeatsAvailable(List<SeatSelection> selections) {
+    private void ensureSeatsAvailable(List<SeatSelection> seats) {
         Set<Long> tripCarriageIds = new HashSet<>();
-        for (SeatSelection selection : selections) {
-            tripCarriageIds.add(selection.tripCarriageId());
+        for (SeatSelection seat : seats) {
+            tripCarriageIds.add(seat.tripCarriageId());
         }
 
-        Set<BookingRepository.SeatKey> occupied = bookingRepository.findActiveSeats(tripCarriageIds);
-        for (SeatSelection selection : selections) {
-            BookingRepository.SeatKey key = new BookingRepository.SeatKey(
-                selection.tripCarriageId(),
-                selection.seatNumber()
-            );
+        Set<OccupiedSeat> occupied = bookingRepository.findActiveSeats(tripCarriageIds);
+        for (SeatSelection seat : seats) {
+            OccupiedSeat key = new OccupiedSeat(seat.tripCarriageId(), seat.seatNumber());
             if (occupied.contains(key)) {
-                throw new SeatAlreadyTakenException(selection.carriageNumber(), selection.seatNumber());
+                throw new SeatAlreadyTakenException(seat.carriageNumber(), seat.seatNumber());
             }
         }
     }

@@ -4,17 +4,13 @@ import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.acme.trainticketsbooking.domain.BookingForCancellation;
 import org.acme.trainticketsbooking.domain.BookingStatus;
-import org.acme.trainticketsbooking.domain.CancelledBooking;
-import org.acme.trainticketsbooking.domain.CreatedBooking;
 import org.acme.trainticketsbooking.domain.CreatedTicket;
+import org.acme.trainticketsbooking.domain.OccupiedSeat;
 import org.acme.trainticketsbooking.domain.SeatSelection;
 import org.acme.trainticketsbooking.domain.TicketStatus;
 import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
-import org.acme.trainticketsbooking.exception.BookingAlreadyCancelledException;
 import org.acme.trainticketsbooking.exception.DataAccessException;
 import org.acme.trainticketsbooking.exception.SeatAlreadyTakenException;
-import org.postgresql.util.PSQLException;
-import org.postgresql.util.ServerErrorMessage;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -34,7 +30,7 @@ public class BookingRepository {
 
     private static final String UNIQUE_VIOLATION = "23505";
 
-    private static final String FIND_TRIP_CARRIAGES_SQL = """
+    private static final String LOCK_TRIP_WITH_CARRIAGES_SQL = """
         SELECT t.id AS trip_id,
                tc.id AS trip_carriage_id,
                tc.number AS carriage_number,
@@ -43,6 +39,8 @@ public class BookingRepository {
         LEFT JOIN trip_carriage tc ON tc.trip_id = t.id
         LEFT JOIN carriage_template ct ON ct.id = tc.carriage_template_id
         WHERE t.id = ?
+          AND t.departure_time > NOW()
+        FOR SHARE OF t
         """;
 
     private static final String FIND_ACTIVE_SEATS_SQL = """
@@ -64,16 +62,20 @@ public class BookingRepository {
         RETURNING id
         """;
 
-    private static final String FIND_BOOKING_FOR_CANCELLATION_SQL = """
-        SELECT b.id,
+    private static final String LOCK_BOOKING_FOR_CANCELLATION_SQL = """
+        SELECT b.id AS booking_id,
                b.status,
-               MIN(tr.departure_time) AS departure_time
+               NOW() AS checked_at,
+               (
+                   SELECT MIN(tr.departure_time)
+                   FROM ticket t
+                   JOIN trip_carriage tc ON tc.id = t.trip_carriage_id
+                   JOIN trip tr ON tr.id = tc.trip_id
+                   WHERE t.booking_id = b.id
+               ) AS departure_time
         FROM booking b
-        LEFT JOIN ticket t ON t.booking_id = b.id
-        LEFT JOIN trip_carriage tc ON tc.id = t.trip_carriage_id
-        LEFT JOIN trip tr ON tr.id = tc.trip_id
         WHERE b.id = ?
-        GROUP BY b.id, b.status
+        FOR UPDATE
         """;
 
     private static final String CANCEL_BOOKING_SQL = """
@@ -98,9 +100,9 @@ public class BookingRepository {
         this.dataSource = dataSource;
     }
 
-    public Optional<List<TripCarriageSeatInfo>> findTripCarriages(long tripId) {
+    public Optional<List<TripCarriageSeatInfo>> lockTripWithCarriages(long tripId) {
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(FIND_TRIP_CARRIAGES_SQL)) {
+             PreparedStatement statement = connection.prepareStatement(LOCK_TRIP_WITH_CARRIAGES_SQL)) {
 
             statement.setLong(1, tripId);
             try (ResultSet resultSet = statement.executeQuery()) {
@@ -127,7 +129,7 @@ public class BookingRepository {
         }
     }
 
-    public Set<SeatKey> findActiveSeats(Collection<Long> tripCarriageIds) {
+    public Set<OccupiedSeat> findActiveSeats(Collection<Long> tripCarriageIds) {
         if (tripCarriageIds == null || tripCarriageIds.isEmpty()) {
             return Set.of();
         }
@@ -137,9 +139,9 @@ public class BookingRepository {
 
             statement.setArray(1, connection.createArrayOf("bigint", tripCarriageIds.toArray(Long[]::new)));
             try (ResultSet resultSet = statement.executeQuery()) {
-                Set<SeatKey> occupied = new HashSet<>();
+                Set<OccupiedSeat> occupied = new HashSet<>();
                 while (resultSet.next()) {
-                    occupied.add(new SeatKey(
+                    occupied.add(new OccupiedSeat(
                         resultSet.getLong("trip_carriage_id"),
                         resultSet.getShort("seat_number")
                     ));
@@ -151,45 +153,45 @@ public class BookingRepository {
         }
     }
 
-    public CreatedBooking createBooking(List<SeatSelection> seats) {
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            try {
-                UUID bookingId = insertBooking(connection);
-                List<CreatedTicket> tickets = new ArrayList<>(seats.size());
-                for (SeatSelection seat : seats) {
-                    UUID ticketId = insertTicket(connection, bookingId, seat.tripCarriageId(), seat.seatNumber());
-                    tickets.add(new CreatedTicket(
-                        ticketId,
-                        seat.carriageNumber(),
-                        seat.seatNumber(),
-                        TicketStatus.ACTIVE
-                    ));
-                }
-                connection.commit();
-                return new CreatedBooking(bookingId, tickets);
-            } catch (SQLException e) {
-                connection.rollback();
-                if (isActiveSeatUniqueViolation(e)) {
-                    throw new SeatAlreadyTakenException();
-                }
-                throw e;
-            } finally {
-                connection.setAutoCommit(true);
-            }
-        } catch (SeatAlreadyTakenException e) {
-            throw e;
+    public UUID insertBooking() {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(INSERT_BOOKING_SQL);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            resultSet.next();
+            return resultSet.getObject("id", UUID.class);
         } catch (SQLException e) {
-            if (isActiveSeatUniqueViolation(e)) {
-                throw new SeatAlreadyTakenException();
-            }
-            throw new DataAccessException("Ошибка при оформлении бронирования", e);
+            throw new DataAccessException("Ошибка при создании бронирования", e);
         }
     }
 
-    public Optional<BookingForCancellation> findBookingForCancellation(UUID bookingId) {
+    public CreatedTicket insertTicket(UUID bookingId, SeatSelection seat) {
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(FIND_BOOKING_FOR_CANCELLATION_SQL)) {
+             PreparedStatement statement = connection.prepareStatement(INSERT_TICKET_SQL)) {
+
+            statement.setObject(1, bookingId);
+            statement.setLong(2, seat.tripCarriageId());
+            statement.setShort(3, seat.seatNumber());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return new CreatedTicket(
+                    resultSet.getObject("id", UUID.class),
+                    seat.carriageNumber(),
+                    seat.seatNumber(),
+                    TicketStatus.ACTIVE
+                );
+            }
+        } catch (SQLException e) {
+            if (isActiveSeatUniqueViolation(e)) {
+                throw new SeatAlreadyTakenException(seat.carriageNumber(), seat.seatNumber());
+            }
+            throw new DataAccessException("Ошибка при создании билета", e);
+        }
+    }
+
+    public Optional<BookingForCancellation> lockBookingForCancellation(UUID bookingId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(LOCK_BOOKING_FOR_CANCELLATION_SQL)) {
 
             statement.setObject(1, bookingId);
             try (ResultSet resultSet = statement.executeQuery()) {
@@ -197,9 +199,10 @@ public class BookingRepository {
                     return Optional.empty();
                 }
                 return Optional.of(new BookingForCancellation(
-                    resultSet.getObject("id", UUID.class),
+                    resultSet.getObject("booking_id", UUID.class),
                     BookingStatus.valueOf(resultSet.getString("status")),
-                    resultSet.getObject("departure_time", OffsetDateTime.class)
+                    resultSet.getObject("departure_time", OffsetDateTime.class),
+                    resultSet.getObject("checked_at", OffsetDateTime.class)
                 ));
             }
         } catch (SQLException e) {
@@ -207,61 +210,25 @@ public class BookingRepository {
         }
     }
 
-    public CancelledBooking cancelBooking(UUID bookingId) {
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            try {
-                try (PreparedStatement cancelBooking = connection.prepareStatement(CANCEL_BOOKING_SQL)) {
-                    cancelBooking.setObject(1, bookingId);
-                    int updatedBookings = cancelBooking.executeUpdate();
-                    if (updatedBookings == 0) {
-                        connection.rollback();
-                        throw new BookingAlreadyCancelledException(bookingId);
-                    }
-                }
-                try (PreparedStatement cancelTickets = connection.prepareStatement(CANCEL_TICKETS_SQL)) {
-                    cancelTickets.setObject(1, bookingId);
-                    cancelTickets.executeUpdate();
-                }
-                connection.commit();
-                return new CancelledBooking(bookingId, BookingStatus.CANCELLED);
-            } catch (SQLException e) {
-                connection.rollback();
-                throw e;
-            } finally {
-                connection.setAutoCommit(true);
-            }
-        } catch (BookingAlreadyCancelledException e) {
-            throw e;
-        } catch (DataAccessException e) {
-            throw e;
+    public int cancelConfirmedBooking(UUID bookingId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(CANCEL_BOOKING_SQL)) {
+
+            statement.setObject(1, bookingId);
+            return statement.executeUpdate();
         } catch (SQLException e) {
             throw new DataAccessException("Ошибка при отмене бронирования", e);
         }
     }
 
-    private UUID insertBooking(Connection connection) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(INSERT_BOOKING_SQL);
-             ResultSet resultSet = statement.executeQuery()) {
-            resultSet.next();
-            return resultSet.getObject("id", UUID.class);
-        }
-    }
+    public void cancelActiveTickets(UUID bookingId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(CANCEL_TICKETS_SQL)) {
 
-    private UUID insertTicket(
-            Connection connection,
-            UUID bookingId,
-            long tripCarriageId,
-            short seatNumber
-    ) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(INSERT_TICKET_SQL)) {
             statement.setObject(1, bookingId);
-            statement.setLong(2, tripCarriageId);
-            statement.setShort(3, seatNumber);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                resultSet.next();
-                return resultSet.getObject("id", UUID.class);
-            }
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка при отмене билетов", e);
         }
     }
 
@@ -269,22 +236,10 @@ public class BookingRepository {
         SQLException current = exception;
         while (current != null) {
             if (UNIQUE_VIOLATION.equals(current.getSQLState())) {
-                if (current instanceof PSQLException psqlException) {
-                    ServerErrorMessage serverError = psqlException.getServerErrorMessage();
-                    if (serverError != null && "uq_active_ticket_seat".equals(serverError.getConstraint())) {
-                        return true;
-                    }
-                }
-                String message = current.getMessage();
-                if (message != null && message.contains("uq_active_ticket_seat")) {
-                    return true;
-                }
+                return true;
             }
             current = current.getNextException();
         }
         return false;
-    }
-
-    public record SeatKey(long tripCarriageId, short seatNumber) {
     }
 }

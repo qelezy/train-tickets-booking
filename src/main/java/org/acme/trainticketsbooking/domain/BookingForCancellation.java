@@ -4,8 +4,9 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record BookingForCancellation(
-        UUID id,
+        UUID bookingId,
         BookingStatus status,
-        OffsetDateTime departureTime
+        OffsetDateTime departureTime,
+        OffsetDateTime checkedAt
 ) {
 }

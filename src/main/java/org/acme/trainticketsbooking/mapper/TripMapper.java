@@ -17,7 +17,7 @@ public class TripMapper {
 
     public TripSearchResponse toSearchResponse(TripSchedule schedule) {
         return new TripSearchResponse(
-            schedule.id(),
+            schedule.tripId(),
             schedule.trainNumber(),
             schedule.trainName(),
             schedule.departureStationName(),

@@ -34,13 +34,13 @@ public class TripService {
             return List.of();
         }
 
-        List<Long> tripIds = schedules.stream().map(TripSchedule::id).toList();
+        List<Long> tripIds = schedules.stream().map(TripSchedule::tripId).toList();
         Map<Long, List<SeatAvailability>> availabilityByTripId =
             tripRepository.findSeatAvailabilityByTripIds(tripIds);
 
         List<TripSchedule> result = new ArrayList<>(schedules.size());
         for (TripSchedule schedule : schedules) {
-            List<SeatAvailability> seats = availabilityByTripId.getOrDefault(schedule.id(), List.of());
+            List<SeatAvailability> seats = availabilityByTripId.getOrDefault(schedule.tripId(), List.of());
             result.add(schedule.withAvailableSeats(seats));
         }
         return tripMapper.toSearchResponseList(result);

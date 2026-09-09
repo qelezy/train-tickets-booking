@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 public record TripSchedule(
-        Long id,
+        Long tripId,
         String trainNumber,
         String trainName,
         String departureStationName,
@@ -21,7 +21,7 @@ public record TripSchedule(
 
     public TripSchedule withAvailableSeats(List<SeatAvailability> seats) {
         return new TripSchedule(
-            id,
+            tripId,
             trainNumber,
             trainName,
             departureStationName,

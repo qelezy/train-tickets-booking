@@ -1,4 +1,6 @@
-package org.acme.trainticketsbooking.domain;
+package org.acme.trainticketsbooking.domain.ticket;
+
+import org.acme.trainticketsbooking.domain.booking.BookingStatus;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;

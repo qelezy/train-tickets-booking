@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.domain;
+package org.acme.trainticketsbooking.domain.trip;
 
 import java.time.OffsetDateTime;
 import java.util.List;

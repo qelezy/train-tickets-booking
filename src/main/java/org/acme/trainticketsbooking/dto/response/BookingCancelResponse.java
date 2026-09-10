@@ -1,6 +1,6 @@
 package org.acme.trainticketsbooking.dto.response;
 
-import org.acme.trainticketsbooking.domain.BookingStatus;
+import org.acme.trainticketsbooking.domain.booking.BookingStatus;
 
 import java.util.UUID;
 

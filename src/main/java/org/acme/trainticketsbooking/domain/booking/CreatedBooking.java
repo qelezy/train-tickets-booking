@@ -1,4 +1,6 @@
-package org.acme.trainticketsbooking.domain;
+package org.acme.trainticketsbooking.domain.booking;
+
+import org.acme.trainticketsbooking.domain.ticket.CreatedTicket;
 
 import java.util.List;
 import java.util.UUID;

@@ -2,10 +2,10 @@ package org.acme.trainticketsbooking.repository;
 
 import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.acme.trainticketsbooking.domain.CarriageType;
-import org.acme.trainticketsbooking.domain.SeatAvailability;
-import org.acme.trainticketsbooking.domain.TripSchedule;
-import org.acme.trainticketsbooking.exception.DataAccessException;
+import org.acme.trainticketsbooking.domain.trip.CarriageType;
+import org.acme.trainticketsbooking.domain.trip.SeatAvailability;
+import org.acme.trainticketsbooking.domain.trip.TripSchedule;
+import org.acme.trainticketsbooking.exception.common.DataAccessException;
 
 import java.sql.Array;
 import java.sql.Connection;

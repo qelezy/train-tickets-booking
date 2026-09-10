@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.domain;
+package org.acme.trainticketsbooking.domain.booking;
 
 public enum BookingStatus {
     CONFIRMED,

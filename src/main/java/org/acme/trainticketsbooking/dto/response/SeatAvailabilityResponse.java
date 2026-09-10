@@ -1,6 +1,6 @@
 package org.acme.trainticketsbooking.dto.response;
 
-import org.acme.trainticketsbooking.domain.CarriageType;
+import org.acme.trainticketsbooking.domain.trip.CarriageType;
 
 public record SeatAvailabilityResponse(
         CarriageType carriageType,

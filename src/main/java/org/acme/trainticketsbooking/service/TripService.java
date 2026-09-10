@@ -1,8 +1,8 @@
 package org.acme.trainticketsbooking.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.acme.trainticketsbooking.domain.SeatAvailability;
-import org.acme.trainticketsbooking.domain.TripSchedule;
+import org.acme.trainticketsbooking.domain.trip.SeatAvailability;
+import org.acme.trainticketsbooking.domain.trip.TripSchedule;
 import org.acme.trainticketsbooking.dto.request.TripSearchRequest;
 import org.acme.trainticketsbooking.dto.response.TripSearchResponse;
 import org.acme.trainticketsbooking.mapper.TripMapper;

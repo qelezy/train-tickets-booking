@@ -2,16 +2,16 @@ package org.acme.trainticketsbooking.repository;
 
 import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.acme.trainticketsbooking.domain.BookingForCancellation;
-import org.acme.trainticketsbooking.domain.BookingStatus;
-import org.acme.trainticketsbooking.domain.CreatedTicket;
-import org.acme.trainticketsbooking.domain.OccupiedSeat;
-import org.acme.trainticketsbooking.domain.SeatSelection;
-import org.acme.trainticketsbooking.domain.TicketForCancellation;
-import org.acme.trainticketsbooking.domain.TicketStatus;
-import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
-import org.acme.trainticketsbooking.exception.DataAccessException;
-import org.acme.trainticketsbooking.exception.SeatAlreadyTakenException;
+import org.acme.trainticketsbooking.domain.booking.BookingForCancellation;
+import org.acme.trainticketsbooking.domain.booking.BookingStatus;
+import org.acme.trainticketsbooking.domain.ticket.CreatedTicket;
+import org.acme.trainticketsbooking.domain.ticket.OccupiedSeat;
+import org.acme.trainticketsbooking.domain.ticket.SeatSelection;
+import org.acme.trainticketsbooking.domain.ticket.TicketForCancellation;
+import org.acme.trainticketsbooking.domain.ticket.TicketStatus;
+import org.acme.trainticketsbooking.domain.trip.TripCarriageSeatInfo;
+import org.acme.trainticketsbooking.exception.common.DataAccessException;
+import org.acme.trainticketsbooking.exception.ticket.SeatAlreadyTakenException;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;

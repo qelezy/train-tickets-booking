@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.domain;
+package org.acme.trainticketsbooking.domain.ticket;
 
 import java.util.UUID;
 

@@ -7,6 +7,7 @@ import org.acme.trainticketsbooking.domain.BookingStatus;
 import org.acme.trainticketsbooking.domain.CreatedTicket;
 import org.acme.trainticketsbooking.domain.OccupiedSeat;
 import org.acme.trainticketsbooking.domain.SeatSelection;
+import org.acme.trainticketsbooking.domain.TicketForCancellation;
 import org.acme.trainticketsbooking.domain.TicketStatus;
 import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
 import org.acme.trainticketsbooking.exception.DataAccessException;
@@ -92,6 +93,43 @@ public class BookingRepository {
             cancelled_at = NOW()
         WHERE booking_id = ?
           AND status = 'ACTIVE'
+        """;
+
+    private static final String LOCK_TICKET_FOR_CANCELLATION_SQL = """
+        SELECT t.id AS ticket_id,
+               t.status AS ticket_status,
+               b.id AS booking_id,
+               b.status AS booking_status,
+               NOW() AS checked_at,
+               tr.departure_time
+        FROM ticket t
+        JOIN booking b ON b.id = t.booking_id
+        JOIN trip_carriage tc ON tc.id = t.trip_carriage_id
+        JOIN trip tr ON tr.id = tc.trip_id
+        WHERE t.id = ?
+        FOR UPDATE OF t, b
+        """;
+
+    private static final String CANCEL_TICKET_SQL = """
+        UPDATE ticket
+        SET status = 'CANCELLED',
+            cancelled_at = NOW()
+        WHERE id = ?
+          AND status = 'ACTIVE'
+        """;
+
+    private static final String CANCEL_BOOKING_IF_NO_ACTIVE_TICKETS_SQL = """
+        UPDATE booking
+        SET status = 'CANCELLED',
+            cancelled_at = NOW()
+        WHERE id = ?
+          AND status = 'CONFIRMED'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM ticket
+              WHERE booking_id = ?
+                AND status = 'ACTIVE'
+          )
         """;
 
     private final AgroalDataSource dataSource;
@@ -229,6 +267,52 @@ public class BookingRepository {
             statement.executeUpdate();
         } catch (SQLException e) {
             throw new DataAccessException("Ошибка при отмене билетов", e);
+        }
+    }
+
+    public Optional<TicketForCancellation> lockTicketForCancellation(UUID ticketId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(LOCK_TICKET_FOR_CANCELLATION_SQL)) {
+
+            statement.setObject(1, ticketId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new TicketForCancellation(
+                    resultSet.getObject("ticket_id", UUID.class),
+                    TicketStatus.valueOf(resultSet.getString("ticket_status")),
+                    resultSet.getObject("booking_id", UUID.class),
+                    BookingStatus.valueOf(resultSet.getString("booking_status")),
+                    resultSet.getObject("departure_time", OffsetDateTime.class),
+                    resultSet.getObject("checked_at", OffsetDateTime.class)
+                ));
+            }
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка при получении билета для отмены", e);
+        }
+    }
+
+    public int cancelActiveTicket(UUID ticketId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(CANCEL_TICKET_SQL)) {
+
+            statement.setObject(1, ticketId);
+            return statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка при отмене билета", e);
+        }
+    }
+
+    public int cancelBookingIfNoActiveTickets(UUID bookingId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(CANCEL_BOOKING_IF_NO_ACTIVE_TICKETS_SQL)) {
+
+            statement.setObject(1, bookingId);
+            statement.setObject(2, bookingId);
+            return statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка при закрытии бронирования без активных билетов", e);
         }
     }
 

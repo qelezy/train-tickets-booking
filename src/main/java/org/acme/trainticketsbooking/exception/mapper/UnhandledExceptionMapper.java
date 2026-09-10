@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.mapper;
 
 import io.quarkus.logging.Log;
 import jakarta.ws.rs.core.Response;

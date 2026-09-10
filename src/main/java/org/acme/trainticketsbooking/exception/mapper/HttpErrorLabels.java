@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.mapper;
 
 final class HttpErrorLabels {
 

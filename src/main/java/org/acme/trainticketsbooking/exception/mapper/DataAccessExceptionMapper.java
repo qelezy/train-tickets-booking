@@ -1,10 +1,11 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.mapper;
 
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 import io.quarkus.logging.Log;
 import org.acme.trainticketsbooking.dto.response.ErrorResponse;
+import org.acme.trainticketsbooking.exception.common.DataAccessException;
 
 @Provider
 public class DataAccessExceptionMapper implements ExceptionMapper<DataAccessException> {

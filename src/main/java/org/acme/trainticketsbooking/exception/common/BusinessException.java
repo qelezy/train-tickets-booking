@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.common;
 
 import jakarta.ws.rs.core.Response;
 

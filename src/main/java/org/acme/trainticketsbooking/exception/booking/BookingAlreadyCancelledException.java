@@ -1,6 +1,7 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.booking;
 
 import jakarta.ws.rs.core.Response;
+import org.acme.trainticketsbooking.exception.common.BusinessException;
 
 import java.util.UUID;
 

@@ -1,4 +1,4 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.mapper;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.quarkus.logging.Log;

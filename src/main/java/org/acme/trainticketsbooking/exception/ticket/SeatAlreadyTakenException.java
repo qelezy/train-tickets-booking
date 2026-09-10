@@ -1,6 +1,7 @@
-package org.acme.trainticketsbooking.exception;
+package org.acme.trainticketsbooking.exception.ticket;
 
 import jakarta.ws.rs.core.Response;
+import org.acme.trainticketsbooking.exception.common.BusinessException;
 
 public class SeatAlreadyTakenException extends BusinessException {
 

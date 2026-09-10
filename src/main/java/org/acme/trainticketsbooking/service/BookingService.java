@@ -5,20 +5,26 @@ import jakarta.transaction.Transactional;
 import org.acme.trainticketsbooking.domain.BookingForCancellation;
 import org.acme.trainticketsbooking.domain.BookingStatus;
 import org.acme.trainticketsbooking.domain.CancelledBooking;
+import org.acme.trainticketsbooking.domain.CancelledTicket;
 import org.acme.trainticketsbooking.domain.CreatedBooking;
 import org.acme.trainticketsbooking.domain.CreatedTicket;
 import org.acme.trainticketsbooking.domain.OccupiedSeat;
 import org.acme.trainticketsbooking.domain.SeatSelection;
+import org.acme.trainticketsbooking.domain.TicketForCancellation;
+import org.acme.trainticketsbooking.domain.TicketStatus;
 import org.acme.trainticketsbooking.domain.TripCarriageSeatInfo;
 import org.acme.trainticketsbooking.dto.request.BookingCreateRequest;
 import org.acme.trainticketsbooking.dto.request.SeatRequest;
 import org.acme.trainticketsbooking.dto.response.BookingCancelResponse;
 import org.acme.trainticketsbooking.dto.response.BookingCreateResponse;
+import org.acme.trainticketsbooking.dto.response.TicketCancelResponse;
 import org.acme.trainticketsbooking.exception.BookingAlreadyCancelledException;
 import org.acme.trainticketsbooking.exception.BookingNotFoundException;
 import org.acme.trainticketsbooking.exception.CancellationTooLateException;
 import org.acme.trainticketsbooking.exception.InvalidBookingException;
 import org.acme.trainticketsbooking.exception.SeatAlreadyTakenException;
+import org.acme.trainticketsbooking.exception.TicketAlreadyCancelledException;
+import org.acme.trainticketsbooking.exception.TicketNotFoundException;
 import org.acme.trainticketsbooking.exception.TripNotFoundException;
 import org.acme.trainticketsbooking.mapper.BookingMapper;
 import org.acme.trainticketsbooking.repository.BookingRepository;
@@ -73,10 +79,7 @@ public class BookingService {
             throw new InvalidBookingException("У бронирования отсутствует связанный рейс");
         }
 
-        OffsetDateTime cancelDeadline = booking.departureTime().minusHours(2);
-        if (booking.checkedAt().isAfter(cancelDeadline)) {
-            throw new CancellationTooLateException();
-        }
+        ensureCancellationAllowed(booking.departureTime(), booking.checkedAt());
 
         int updated = bookingRepository.cancelConfirmedBooking(bookingId);
         if (updated == 0) {
@@ -85,6 +88,48 @@ public class BookingService {
         bookingRepository.cancelActiveTickets(bookingId);
 
         return bookingMapper.toCancelResponse(new CancelledBooking(bookingId, BookingStatus.CANCELLED));
+    }
+
+    @Transactional
+    public TicketCancelResponse cancelTicket(UUID ticketId) {
+        TicketForCancellation ticket = bookingRepository.lockTicketForCancellation(ticketId)
+            .orElseThrow(() -> new TicketNotFoundException(ticketId));
+
+        if (ticket.ticketStatus() == TicketStatus.CANCELLED) {
+            throw new TicketAlreadyCancelledException(ticketId);
+        }
+        if (ticket.bookingStatus() == BookingStatus.CANCELLED) {
+            throw new BookingAlreadyCancelledException(ticket.bookingId());
+        }
+        if (ticket.departureTime() == null) {
+            throw new InvalidBookingException("У билета отсутствует связанный рейс");
+        }
+
+        ensureCancellationAllowed(ticket.departureTime(), ticket.checkedAt());
+
+        int updated = bookingRepository.cancelActiveTicket(ticketId);
+        if (updated == 0) {
+            throw new TicketAlreadyCancelledException(ticketId);
+        }
+
+        int bookingUpdated = bookingRepository.cancelBookingIfNoActiveTickets(ticket.bookingId());
+        BookingStatus bookingStatus = bookingUpdated > 0
+            ? BookingStatus.CANCELLED
+            : BookingStatus.CONFIRMED;
+
+        return bookingMapper.toTicketCancelResponse(new CancelledTicket(
+            ticketId,
+            TicketStatus.CANCELLED,
+            ticket.bookingId(),
+            bookingStatus
+        ));
+    }
+
+    private void ensureCancellationAllowed(OffsetDateTime departureTime, OffsetDateTime checkedAt) {
+        OffsetDateTime cancelDeadline = departureTime.minusHours(2);
+        if (checkedAt.isAfter(cancelDeadline)) {
+            throw new CancellationTooLateException();
+        }
     }
 
     private List<SeatSelection> resolveSeats(

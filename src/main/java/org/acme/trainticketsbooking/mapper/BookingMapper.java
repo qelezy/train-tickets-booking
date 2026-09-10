@@ -2,10 +2,12 @@ package org.acme.trainticketsbooking.mapper;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.acme.trainticketsbooking.domain.CancelledBooking;
+import org.acme.trainticketsbooking.domain.CancelledTicket;
 import org.acme.trainticketsbooking.domain.CreatedBooking;
 import org.acme.trainticketsbooking.domain.CreatedTicket;
 import org.acme.trainticketsbooking.dto.response.BookingCancelResponse;
 import org.acme.trainticketsbooking.dto.response.BookingCreateResponse;
+import org.acme.trainticketsbooking.dto.response.TicketCancelResponse;
 import org.acme.trainticketsbooking.dto.response.TicketResponse;
 
 import java.util.List;
@@ -24,6 +26,15 @@ public class BookingMapper {
         return new BookingCancelResponse(
             booking.bookingId(),
             booking.status()
+        );
+    }
+
+    public TicketCancelResponse toTicketCancelResponse(CancelledTicket ticket) {
+        return new TicketCancelResponse(
+            ticket.ticketId(),
+            ticket.ticketStatus(),
+            ticket.bookingId(),
+            ticket.bookingStatus()
         );
     }
 

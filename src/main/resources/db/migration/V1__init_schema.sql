@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE station (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code VARCHAR(7) NOT NULL UNIQUE CHECK (code ~ '^[0-9]{7}$'),
@@ -71,11 +73,11 @@ CREATE UNIQUE INDEX uq_active_ticket_seat
     ON ticket (trip_carriage_id, seat_number)
     WHERE status = 'ACTIVE';
 
-CREATE INDEX idx_station_city_lower
-    ON station (LOWER(city));
+CREATE INDEX idx_station_city_trgm
+    ON station USING gin (city gin_trgm_ops);
 
-CREATE INDEX idx_route_train_name_lower
-    ON train (departure_station_id, arrival_station_id, LOWER(name));
+CREATE INDEX idx_train_name_trgm
+    ON train USING gin (name gin_trgm_ops);
 
 CREATE INDEX idx_ticket_booking_id
     ON ticket (booking_id);

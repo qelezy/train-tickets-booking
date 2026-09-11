@@ -38,9 +38,9 @@ public class TripRepository {
         JOIN train t ON t.id = tr.train_id
         JOIN station ds ON ds.id = t.departure_station_id
         JOIN station arrs ON arrs.id = t.arrival_station_id
-        WHERE LOWER(ds.city) = LOWER(?)
-          AND LOWER(arrs.city) = LOWER(?)
-          AND (? IS NULL OR LOWER(t.name) = LOWER(?))
+        WHERE ds.city ILIKE ? ESCAPE '\\'
+          AND arrs.city ILIKE ? ESCAPE '\\'
+          AND (? IS NULL OR t.name ILIKE ? ESCAPE '\\')
           AND tr.departure_time > NOW()
         ORDER BY tr.departure_time ASC
         """;
@@ -68,14 +68,25 @@ public class TripRepository {
         this.dataSource = dataSource;
     }
 
+    private static String toIlikeContainsPattern(String value) {
+        if (value == null || value.isBlank()) {
+            return "%";
+        }
+        return "%"
+            + value.replace("\\", "\\\\")
+                   .replace("%", "\\%")
+                   .replace("_", "\\_")
+            + "%";
+    }
+
     public List<TripSchedule> findSchedules(String departureCity, String arrivalCity, String trainName) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(FIND_TRIPS_SQL)) {
 
-            statement.setString(1, departureCity);
-            statement.setString(2, arrivalCity);
+            statement.setString(1, toIlikeContainsPattern(departureCity));
+            statement.setString(2, toIlikeContainsPattern(arrivalCity));
             statement.setString(3, trainName);
-            statement.setString(4, trainName);
+            statement.setString(4, trainName == null ? null : toIlikeContainsPattern(trainName));
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 List<TripSchedule> schedules = new ArrayList<>();

@@ -41,6 +41,7 @@ SELECT t.id, v.departure_time, v.arrival_time
 FROM train t
 JOIN (
     VALUES
+        ('737А', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '30 minutes' + INTERVAL '6 hours 50 minutes'),
         ('737А', NOW() + INTERVAL '1 day',   NOW() + INTERVAL '1 day'   + INTERVAL '6 hours 50 minutes'),
         ('737А', NOW() + INTERVAL '2 days',  NOW() + INTERVAL '2 days'  + INTERVAL '6 hours 50 minutes'),
         ('737А', NOW() + INTERVAL '3 days',  NOW() + INTERVAL '3 days'  + INTERVAL '6 hours 50 minutes'),
@@ -132,6 +133,22 @@ DECLARE
     selected_booking_id UUID;
     selected_carriage_id BIGINT;
 BEGIN
+    SELECT tr.id INTO STRICT selected_trip_id
+    FROM trip tr
+    JOIN train t ON t.id = tr.train_id
+    WHERE t.number = '737А'
+      AND tr.departure_time > NOW()
+      AND tr.departure_time < NOW() + INTERVAL '2 hours'
+    ORDER BY tr.departure_time
+    LIMIT 1;
+
+    INSERT INTO booking (status) VALUES ('CONFIRMED') RETURNING id INTO selected_booking_id;
+    SELECT id INTO STRICT selected_carriage_id
+    FROM trip_carriage WHERE trip_id = selected_trip_id AND number = 1;
+    INSERT INTO ticket (booking_id, trip_carriage_id, seat_number, status) VALUES
+        (selected_booking_id, selected_carriage_id, 1, 'ACTIVE'),
+        (selected_booking_id, selected_carriage_id, 2, 'ACTIVE');
+
     SELECT tr.id INTO STRICT selected_trip_id
     FROM trip tr
     JOIN train t ON t.id = tr.train_id
